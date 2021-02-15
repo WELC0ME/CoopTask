@@ -11,8 +11,10 @@ class Map:
 
     def __init__(self, coordinates, zoom):
         self.coordinates = coordinates
+        self.map_type = "map"
         self.zoom = zoom
         self.image = self.get_map(firstly=True)
+
         self.zoom_borders = (0, 17)
         self.longitude_borders = (-180, 180)
         self.latitude_borders = (-90, 90)
@@ -27,7 +29,7 @@ class Map:
     def get_map(self, firstly=False):
         try:
             map_params = {
-                "l": "map",
+                "l": self.map_type,
                 "size": ','.join([str(i) for i in SIZE]),
                 "ll": ','.join([str(i) for i in self.coordinates]),
                 "z": self.zoom,
@@ -54,6 +56,12 @@ class Map:
                 pygame.K_LEFT: (-1, 0),
                 pygame.K_RIGHT: (1, 0),
             },
+            self.change_type: {
+                pygame.K_1: 'map',
+                pygame.K_2: 'sat',
+                pygame.K_3: 'skl',
+                pygame.K_4: 'sat,skl',
+            },
         }
         for function in list(functions.keys()):
             if key in list(functions[function].keys()):
@@ -79,6 +87,11 @@ class Map:
                     self.coordinates[1] += step[1]
                     self.image = self.get_map()
 
+    def change_type(self, new_type):
+        if new_type != self.map_type:
+            self.map_type = new_type
+            self.image = self.get_map()
+
 
 if __name__ == '__main__':
     try:
@@ -86,8 +99,11 @@ if __name__ == '__main__':
     except FileExistsError:
         pass
 
+    print('Переключение слоёв карты осуществляется цифрами')
+
     pygame.init()
     screen = pygame.display.set_mode(SIZE)
+    pygame.display.set_caption('Map')
     clock = pygame.time.Clock()
     running = True
 
@@ -99,6 +115,7 @@ if __name__ == '__main__':
                 running = False
             elif event.type == pygame.KEYDOWN:
                 operator.key_down(event.key)
+        screen.fill(BLACK)
         operator.show(screen)
         pygame.display.flip()
         clock.tick(FPS)
