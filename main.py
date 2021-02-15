@@ -7,12 +7,33 @@ import os
 from config import *
 
 
+def find_coordinates_by_name(name):
+    try:
+        params = {
+            "geocode": "+".join(name.split(" ")),
+            "apikey": APIKEY,
+            "results": "1",
+            "format": "json",
+        }
+        response = requests.get("http://geocode-maps.yandex.ru/1.x/", params=params)
+        s = ",".join((response.json()["response"]["GeoObjectCollection"]
+                                     ["featureMember"][0]["GeoObject"]["Point"]["pos"]).split())
+        return s
+    except IndexError:
+        print("Адресс не найден!!!")
+        return "71.430411,51.128207"
+
+
 class Map:
 
     def __init__(self, coordinates, zoom):
         self.coordinates = coordinates
         self.map_type = "map"
         self.zoom = zoom
+
+        self.text = ""
+        self.metka = ""
+
         self.image = self.get_map(firstly=True)
 
         self.zoom_borders = (0, 17)
@@ -33,6 +54,7 @@ class Map:
                 "size": ','.join([str(i) for i in SIZE]),
                 "ll": ','.join([str(i) for i in self.coordinates]),
                 "z": self.zoom,
+                "pt": self.metka
             }
             response = requests.get("http://static-maps.yandex.ru/1.x/",
                                     params=map_params)
@@ -41,8 +63,20 @@ class Map:
         except UnidentifiedImageError:
             return self.image if not firstly else None
 
-    def show(self, surf):
+    def show(self, surf, color):
         surf.blit(self.image, (0, 0))
+
+        font = pygame.font.Font(None, 24)
+        txt_surface = font.render("Сброс метки", True, pygame.Color("black"))
+        reset_box.w = txt_surface.get_width() + 10
+        pygame.draw.rect(surf, (200, 200, 200), reset_box)
+        surf.blit(txt_surface, (reset_box.x + 5, reset_box.y + 6))
+
+        txt_surface = font.render(self.text, True, color)
+        width = max(200, txt_surface.get_width() + 10)
+        input_box.w = width
+        surf.blit(txt_surface, (input_box.x + 5, input_box.y + 7))
+        pygame.draw.rect(surf, color, input_box, 2)
 
     def key_down(self, key):
         functions = {
@@ -92,6 +126,16 @@ class Map:
             self.map_type = new_type
             self.image = self.get_map()
 
+    def to_adress(self):
+        coordinates = find_coordinates_by_name(self.text)
+        self.metka = coordinates + ",pm2rdl"
+        self.set_params([float(coor) for coor in coordinates.split(",")], 5)
+        self.image = self.get_map()
+
+    def reset(self):
+        self.metka = ""
+        self.image = self.get_map()
+
 
 if __name__ == '__main__':
     try:
@@ -100,12 +144,20 @@ if __name__ == '__main__':
         pass
 
     print('Переключение слоёв карты осуществляется цифрами')
+    print('Чтобы перейти по адрессу, нажмите Enter')
 
     pygame.init()
-    screen = pygame.display.set_mode(SIZE)
+    screen = pygame.display.set_mode([SIZE[0], SIZE[1] + 75])
     pygame.display.set_caption('Map')
     clock = pygame.time.Clock()
     running = True
+    active = False
+    color_inactive = pygame.Color((90, 90, 90))
+    color_active = pygame.Color("black")
+    input_color = color_inactive
+
+    input_box = pygame.Rect(25, 265, 140, 26)
+    reset_box = pygame.Rect(25, 300, 70, 26)
 
     operator = Map([34.11, 66.56], 5)
 
@@ -114,9 +166,27 @@ if __name__ == '__main__':
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
-                operator.key_down(event.key)
-        screen.fill(BLACK)
-        operator.show(screen)
+                if active:
+                    if event.key == pygame.K_RETURN:
+                        operator.to_adress()
+                        operator.text = ''
+                    elif event.key == pygame.K_BACKSPACE:
+                        operator.text = operator.text[:-1]
+                    else:
+                        operator.text += event.unicode
+                else:
+                    operator.key_down(event.key)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if input_box.collidepoint(event.pos):
+                    active = not active
+                else:
+                    active = False
+                if reset_box.collidepoint(event.pos):
+                    operator.reset()
+                input_color = color_active if active else color_inactive
+
+        screen.fill("white")
+        operator.show(screen, input_color)
         pygame.display.flip()
         clock.tick(FPS)
     pygame.quit()
