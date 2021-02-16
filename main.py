@@ -5,6 +5,72 @@ import pygame
 import shutil
 import os
 from config import *
+import math
+
+
+def lonlat_distance(a, b):
+
+    degree_to_meters_factor = 111 * 1000 # 111 километров в метрах
+    a_lon, a_lat = a
+    b_lon, b_lat = b
+
+    # Берем среднюю по широте точку и считаем коэффициент для нее.
+    radians_lattitude = math.radians((a_lat + b_lat) / 2.)
+    lat_lon_factor = math.cos(radians_lattitude)
+
+    # Вычисляем смещения в метрах по вертикали и горизонтали.
+    dx = abs(a_lon - b_lon) * degree_to_meters_factor * lat_lon_factor
+    dy = abs(a_lat - b_lat) * degree_to_meters_factor
+
+    # Вычисляем расстояние между точками.
+    distance = math.sqrt(dx * dx + dy * dy)
+
+    return distance
+
+
+def check_org_coords(coords):
+    try:
+        search_api_server = "https://search-maps.yandex.ru/v1/"
+        api_key = "dda3ddba-c9ea-4ead-9010-f43fbc15c6e3"
+
+        search_params = {
+            "apikey": api_key,
+            'lang': 'ru_RU',
+            "text": find_full_address_by_coords(coords)[0],
+            "type": "biz"
+        }
+        response = requests.get(search_api_server, params=search_params)
+        json_response = response.json()
+        point = json_response["features"][0]["geometry"]["coordinates"]
+        name = json_response["features"][0]["properties"]["CompanyMetaData"]["name"]
+        address = json_response["features"][0]["properties"]["CompanyMetaData"]["address"]
+        if lonlat_distance(coords, point) <= 50:
+            return address + ' ' + name
+    except Exception:
+        return False
+    return False
+
+
+def find_full_address_by_coords(coordinates):
+    try:
+        params = {
+            "geocode": ','.join([str(i) for i in coordinates]),
+            "apikey": APIKEY,
+            "results": "1",
+            "format": "json",
+        }
+        response = requests.get("http://geocode-maps.yandex.ru/1.x/",
+                                params=params)
+        s = (response.json()["response"]["GeoObjectCollection"]["featureMember"][0]
+        ["GeoObject"]["metaDataProperty"]["GeocoderMetaData"]["Address"]["formatted"])
+        try:
+            postal_code = (response.json()["response"]["GeoObjectCollection"]["featureMember"][0]
+            ["GeoObject"]["metaDataProperty"]["GeocoderMetaData"]["Address"]["postal_code"])
+        except Exception:
+            postal_code = 'нет'
+        return s, 'Почтовый индекс: ' + postal_code
+    except Exception:
+        return "Упс, что-то пошло не так"
 
 
 def find_coordinates_by_name(name):
@@ -34,7 +100,12 @@ def find_full_address_by_name(name):
         response = requests.get("http://geocode-maps.yandex.ru/1.x/", params=params)
         s = (response.json()["response"]["GeoObjectCollection"]["featureMember"][0]["GeoObject"]
                             ["metaDataProperty"]["GeocoderMetaData"]["Address"]["formatted"])
-        return s
+        try:
+            postal_code = (response.json()["response"]["GeoObjectCollection"]["featureMember"][0]["GeoObject"]
+                                ["metaDataProperty"]["GeocoderMetaData"]["Address"]["postal_code"])
+        except Exception:
+            postal_code = 'нет'
+        return s, 'Почтовый индекс: ' + postal_code
     except Exception:
         return "Упс, что-то пошло не так"
 
@@ -49,19 +120,14 @@ class Map:
         self.text = ""
         self.metka = ""
         self.full_address = ""
+        self.postal_code = ""
+        self.postal_code_view = True
 
         self.image = self.get_map(firstly=True)
 
         self.zoom_borders = (0, 17)
         self.longitude_borders = (-180, 180)
         self.latitude_borders = (-90, 90)
-
-    def set_params(self, coordinates, zoom):
-        self.coordinates = coordinates
-        self.zoom = zoom
-
-    def get_params(self):
-        return self.coordinates, self.zoom
 
     def get_map(self, firstly=False):
         try:
@@ -95,6 +161,12 @@ class Map:
         pygame.draw.rect(surf, color_address, output_box, 3)
         surf.blit(txt_surface, (output_box.x + 5, output_box.y + 6))
 
+        text = self.postal_code if self.postal_code_view else ""
+        txt_surface = font.render(text, True, pygame.Color("black"))
+        postal_code_box.w = max(200, txt_surface.get_width() + 10)
+        pygame.draw.rect(surf, (200, 200, 200), postal_code_box, 3)
+        surf.blit(txt_surface, (postal_code_box.x + 5, postal_code_box.y + 6))
+
         txt_surface = font.render(self.text, True, color)
         width = max(200, txt_surface.get_width() + 10)
         input_box.w = width
@@ -125,6 +197,30 @@ class Map:
                 function(functions[function][key])
                 return
 
+    def find_by_coordinates(self, mouse_pos):
+        if 0 <= mouse_pos[0] <= SIZE[0]:
+            if 0 <= mouse_pos[1] <= SIZE[1]:
+                shift = (mouse_pos[0] - SIZE[0] // 2,
+                         SIZE[1] // 2 - mouse_pos[1])
+                step = [(360 / (2 ** self.zoom)) / 256 * shift[0],
+                        (180 / (2 ** self.zoom)) / 256 * shift[1]]
+                coordinates = self.coordinates[:]
+                coordinates[0] += step[0]
+                coordinates[1] += step[1]
+                self.to_adres_by_coords(coordinates)
+
+    def find_org(self, mouse_pos):
+        if 0 <= mouse_pos[0] <= SIZE[0]:
+            if 0 <= mouse_pos[1] <= SIZE[1]:
+                shift = (mouse_pos[0] - SIZE[0] // 2,
+                         SIZE[1] // 2 - mouse_pos[1])
+                step = [(360 / (2 ** self.zoom)) / 256 * shift[0],
+                        (180 / (2 ** self.zoom)) / 256 * shift[1]]
+                coordinates = self.coordinates[:]
+                coordinates[0] += step[0]
+                coordinates[1] += step[1]
+                self.to_adres_org_by_coords(coordinates)
+
     def change_zoom(self, step):
         if self.zoom_borders[0] <= self.zoom + step <= self.zoom_borders[1]:
             self.zoom += step
@@ -149,17 +245,37 @@ class Map:
             self.map_type = new_type
             self.image = self.get_map()
 
+    def change_postal_code_view(self):
+        self.postal_code_view = not self.postal_code_view
+
     def to_adres(self):
         coordinates = find_coordinates_by_name(self.text)
-        self.full_address = "Упс! Что-то пошло не так" if not coordinates[1] else find_full_address_by_name(self.text)
+        self.full_address, self.postal_code = ("Упс! Что-то пошло не так", "") if not coordinates[1] else find_full_address_by_name(self.text)
         self.metka = coordinates[0] + ",pm2rdl"
-        self.set_params([float(coor) for coor in coordinates[0].split(",")], 5)
+        self.coordinates = [float(coord) for coord in coordinates[0].split(",")]
         self.image = self.get_map()
+
+    def to_adres_by_coords(self, coords):
+        self.text = ''
+        self.full_address, self.postal_code = find_full_address_by_coords(coords)
+        self.metka = ','.join([str(i) for i in coords]) + ",pm2rdl"
+        self.image = self.get_map()
+
+    def to_adres_org_by_coords(self, coords):
+        t = check_org_coords(coords)
+        if t:
+            self.full_address, self.postal_code = find_full_address_by_coords(coords)
+            self.full_address = t
+            self.metka = ','.join([str(i) for i in coords]) + ",pm2rdl"
+            self.image = self.get_map()
+        else:
+            self.reset()
 
     def reset(self):
         self.text = ""
         self.metka = ""
         self.full_address = ""
+        self.postal_code = ""
         self.image = self.get_map()
 
 
@@ -170,14 +286,15 @@ if __name__ == '__main__':
         pass
 
     print('Переключение слоёв карты осуществляется цифрами')
-    print('Чтобы перейти по адрессу, нажмите Enter')
+    print('Чтобы перейти по адресу, нажмите Enter')
+    print('Отображение/скрытие почтового индекса - i')
 
     pygame.init()
     screen = pygame.display.set_mode([SIZE[0], SIZE[1] + 105])
     pygame.display.set_caption('Map')
     clock = pygame.time.Clock()
-    running = True
     active = False
+    running = True
     color_inactive = pygame.Color((90, 90, 90))
     color_active = pygame.Color("black")
     input_color = color_inactive
@@ -185,6 +302,7 @@ if __name__ == '__main__':
     input_box = pygame.Rect(25, 265, 140, 26)
     reset_box = pygame.Rect(25, 300, 70, 26)
     output_box = pygame.Rect(25, 335, 140, 23)
+    postal_code_box = pygame.Rect(150, 300, 200, 23)
 
     operator = Map([34.11, 66.56], 5)
 
@@ -202,8 +320,15 @@ if __name__ == '__main__':
                     else:
                         operator.text += event.unicode
                 else:
-                    operator.key_down(event.key)
+                    if event.key == pygame.K_i:
+                        operator.change_postal_code_view()
+                    else:
+                        operator.key_down(event.key)
             elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == pygame.BUTTON_LEFT:
+                    operator.find_by_coordinates(event.pos)
+                elif event.button == pygame.BUTTON_RIGHT:
+                    operator.find_org(event.pos)
                 if input_box.collidepoint(event.pos):
                     active = not active
                 else:
