@@ -262,6 +262,7 @@ class Map:
         self.image = self.get_map()
 
     def to_adres_org_by_coords(self, coords):
+        self.text = ''
         t = check_org_coords(coords)
         if t:
             self.full_address, self.postal_code = find_full_address_by_coords(coords)
