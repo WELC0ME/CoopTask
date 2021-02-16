@@ -1,0 +1,5 @@
+SIZE = (512, 256)
+FPS = 60
+PATH = 'temp/'
+BLACK = (0, 0, 0)
+APIKEY = "40d1649f-0493-4b70-98ba-98533de7710b"
